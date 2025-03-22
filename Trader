@@ -1,0 +1,205 @@
+import ccxt
+import time
+import numpy as np
+
+# OKX API Configuration
+API_CREDENTIALS = {
+    'apiKey': 'YOUR_API_KEY',
+    'secret': 'YOUR_SECRET_KEY',
+    'password': 'YOUR_PASSWORD'
+}
+
+class OKXTrader:
+    def __init__(self, api_credentials, symbol='DOGE/USDT:USDT', leverage=5):
+        self.exchange = ccxt.okx({
+            'apiKey': api_credentials['apiKey'],
+            'secret': api_credentials['secret'],
+            'password': api_credentials['password'],
+            'enableRateLimit': True,
+            'options': {'defaultType': 'swap'}
+        })
+
+        self.symbol = symbol
+        self.leverage = leverage
+        self.contract_size = 1000  # Base contract size for DOGE
+        self.setup_trading_params()
+
+    def setup_trading_params(self):
+        try:
+            self.exchange.set_leverage(self.leverage, self.symbol)
+            print(f"Leverage set to {self.leverage}x")
+        except Exception as e:
+            print(f"Error setting leverage: {e}")
+
+    def get_market_data(self):
+        """Fetch current market price."""
+        try:
+            ticker = self.exchange.fetch_ticker(self.symbol)
+            return ticker
+        except Exception as e:
+            print(f"Error fetching market data: {e}")
+            return None
+
+    def get_open_position(self):
+        """Check if there's an open LONG or SHORT position."""
+        try:
+            positions = self.exchange.fetch_positions([self.symbol])
+            for pos in positions:
+                if pos['contracts'] > 0:
+                    return pos  
+            return None
+        except Exception as e:
+            print(f"Error fetching open positions: {e}")
+            return None
+
+    def close_position(self, position):
+        """Close an open position before opening a new one."""
+        if position:
+            side_to_close = 'sell' if position['side'] == 'long' else 'buy'
+            try:
+                print(f"Closing {position['side'].upper()} position...")
+                self.exchange.create_order(
+                    symbol=self.symbol,
+                    type='market',
+                    side=side_to_close,
+                    amount=position['contracts'],
+                    params={'tdMode': 'cross'}
+                )
+                print(f"Closed {position['side'].upper()} position successfully.")
+            except Exception as e:
+                print(f"Error closing position: {e}")
+
+    def calculate_atr(self, period=14):
+        """Calculate the Average True Range (ATR)."""
+        try:
+            candles = self.exchange.fetch_ohlcv(self.symbol, timeframe='1m', limit=period+1)
+            high_prices = np.array([candle[2] for candle in candles])
+            low_prices = np.array([candle[3] for candle in candles])
+            close_prices = np.array([candle[4] for candle in candles])
+
+            tr = np.maximum(high_prices[1:] - low_prices[1:], 
+                            np.abs(high_prices[1:] - close_prices[:-1]),
+                            np.abs(low_prices[1:] - close_prices[:-1]))
+
+            atr = np.mean(tr)
+            return atr
+        except Exception as e:
+            print(f"Error calculating ATR: {e}")
+            return None
+
+    def calculate_position_size(self, capital, risk_percentage, atr):
+        """Calculate position size based on Basoo risk management."""
+        risk_amount = capital * risk_percentage
+        contracts = round(risk_amount / (atr * self.contract_size), 2)
+        return max(contracts * self.contract_size, 0.01)  # Ensure minimum contract size
+
+    def place_order(self, side, size, stop_loss, take_profit):
+        """Place a trade with ATR-based stop loss & take profit."""
+        try:
+            contracts = round(size / self.contract_size, 2)
+            print(f"Placing {side.upper()} order for {contracts} contracts ({size} DOGE)")
+
+            order_params = {
+                'posSide': 'long' if side == 'buy' else 'short',
+                'tdMode': 'cross'
+            }
+
+            order = self.exchange.create_order(
+                symbol=self.symbol,
+                type='market',
+                side=side,
+                amount=contracts,
+                params=order_params
+            )
+
+            # Attach stop loss & take profit
+            sl_tp_params = {
+                'posSide': 'long' if side == 'buy' else 'short',
+                'tdMode': 'cross',
+                'stopLoss': {
+                    'triggerPrice': stop_loss,
+                    'orderType': 'market'
+                },
+                'takeProfit': {
+                    'triggerPrice': take_profit,
+                    'orderType': 'market'
+                }
+            }
+
+            self.exchange.create_order(
+                symbol=self.symbol,
+                type='conditional',
+                side='sell' if side == 'buy' else 'buy',
+                amount=contracts,
+                params=sl_tp_params
+            )
+
+            return order
+        except Exception as e:
+            print(f"Error placing order: {e}")
+            return None
+
+    def trade(self, risk_percentage=0.01, atr_sl_mult=1.5, atr_tp_mult=3, atr_trailing_mult=0.5):
+        """Main trading loop with dynamic ATR-based trailing stop loss."""
+        while True:
+            try:
+                ticker = self.get_market_data()
+                if not ticker:
+                    continue
+
+                balance = self.exchange.fetch_balance()
+                available_usdt = balance['USDT']['free']
+                atr = self.calculate_atr()
+
+                if atr is None:
+                    time.sleep(60)
+                    continue
+
+                current_price = ticker['last']
+                position_size = self.calculate_position_size(
+                    capital=available_usdt,
+                    risk_percentage=risk_percentage,
+                    atr=atr
+                )
+
+                print(f"Current {self.symbol} price: {current_price}")
+                print(f"Available USDT: {available_usdt}")
+                print(f"ATR: {atr}")
+
+                open_position = self.get_open_position()
+
+                stop_loss = current_price - (atr * atr_sl_mult) if not open_position or open_position['side'] == 'long' else current_price + (atr * atr_sl_mult)
+                take_profit = current_price + (atr * atr_tp_mult) if not open_position or open_position['side'] == 'long' else current_price - (atr * atr_tp_mult)
+                trailing_stop = current_price - (atr * atr_trailing_mult) if open_position and open_position['side'] == 'long' else current_price + (atr * atr_trailing_mult)
+
+                if ticker['percentage'] > 1 and (not open_position or open_position['side'] != 'long'):
+                    if open_position:
+                        self.close_position(open_position)
+
+                    print(f"Opening LONG position at {current_price}")
+                    self.place_order('buy', position_size, stop_loss, take_profit)
+
+                elif ticker['percentage'] < -1 and (not open_position or open_position['side'] != 'short'):
+                    if open_position:
+                        self.close_position(open_position)
+
+                    print(f"Opening SHORT position at {current_price}")
+                    self.place_order('sell', position_size, stop_loss, take_profit)
+
+                # Update Trailing Stop Loss
+                if open_position:
+                    new_trailing_stop = open_position['entryPrice'] + (atr * atr_trailing_mult) if open_position['side'] == 'long' else open_position['entryPrice'] - (atr * atr_trailing_mult)
+                    if (open_position['side'] == 'long' and new_trailing_stop > trailing_stop) or (open_position['side'] == 'short' and new_trailing_stop < trailing_stop):
+                        print(f"Updating trailing stop to {new_trailing_stop}")
+                        trailing_stop = new_trailing_stop
+
+            except Exception as e:
+                print(f"Error in trading loop: {e}")
+
+            time.sleep(60)
+
+# Initialize and start trading
+if __name__ == "__main__":
+    trader = OKXTrader(API_CREDENTIALS)
+    print("Starting live trading with ATR-based SL & TP...")
+    trader.trade()
