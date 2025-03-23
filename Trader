@@ -4,9 +4,9 @@ import numpy as np
 
 # OKX API Configuration
 API_CREDENTIALS = {
-    'apiKey': 'YOUR_API_KEY',
-    'secret': 'YOUR_SECRET_KEY',
-    'password': 'YOUR_PASSWORD'
+    'api_key': '544d6587-0a7d-4b73-bb06-0e3656c08a18',
+    'secret_key': '9C2CA165254391E4B4638DE6577288BD',
+    'passphrase': '#Dinywa15'
 }
 
 class OKXTrader:
