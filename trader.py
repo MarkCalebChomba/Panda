@@ -2,7 +2,7 @@ import ccxt
 import time
 import numpy as np
 
-# OKX Sandbox API Credentials (ensure these are kept secure)
+# OKX Sandbox API Credentials (keep these secure)
 API_CREDENTIALS = {
     'apiKey': '544d6587-0a7d-4b73-bb06-0e3656c08a18',
     'secret': '9C2CA165254391E4B4638DE6577288BD',
@@ -30,19 +30,13 @@ def calculate_atr(exchange, symbol, timeframe='1m', period=14):
 
 class OKXTrader:
     def __init__(self, api_credentials, symbol='DOGE/USDT:USDT', leverage=5):
-        # Configure sandbox endpoints for OKX testnet
+        # Configure the exchange for sandbox mode by setting 'sandbox': True
         self.exchange = ccxt.okx({
             'apiKey': api_credentials['apiKey'],
             'secret': api_credentials['secret'],
             'password': api_credentials['password'],
             'enableRateLimit': True,
-            # Use sandbox/testnet endpoints
-            'urls': {
-                'api': {
-                    'public': 'https://testnet.okx.com',
-                    'private': 'https://testnet.okx.com'
-                }
-            },
+            'sandbox': True,  # Activate sandbox mode
             'options': {'defaultType': 'swap'}
         })
         self.symbol = symbol
