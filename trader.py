@@ -2,7 +2,7 @@ import ccxt
 import time
 import numpy as np
 
-# OKX API Credentials (ensure these are kept secure)
+# OKX Sandbox API Credentials (ensure these are kept secure)
 API_CREDENTIALS = {
     'apiKey': '544d6587-0a7d-4b73-bb06-0e3656c08a18',
     'secret': '9C2CA165254391E4B4638DE6577288BD',
@@ -30,11 +30,19 @@ def calculate_atr(exchange, symbol, timeframe='1m', period=14):
 
 class OKXTrader:
     def __init__(self, api_credentials, symbol='DOGE/USDT:USDT', leverage=5):
+        # Configure sandbox endpoints for OKX testnet
         self.exchange = ccxt.okx({
             'apiKey': api_credentials['apiKey'],
             'secret': api_credentials['secret'],
             'password': api_credentials['password'],
             'enableRateLimit': True,
+            # Use sandbox/testnet endpoints
+            'urls': {
+                'api': {
+                    'public': 'https://testnet.okx.com',
+                    'private': 'https://testnet.okx.com'
+                }
+            },
             'options': {'defaultType': 'swap'}
         })
         self.symbol = symbol
@@ -44,6 +52,7 @@ class OKXTrader:
 
     def setup_trading_params(self):
         try:
+            # Set leverage using OKX's specific method for swaps
             self.exchange.set_leverage(self.leverage, self.symbol)
             print(f"Leverage set to {self.leverage}x using Cross Margin Mode")
         except Exception as e:
@@ -92,7 +101,7 @@ class OKXTrader:
 
     def calculate_position_size(self, capital, risk_percentage, stop_loss_pct):
         """
-        Calculate position size based on the risk management strategy.
+        Calculate position size based on risk management strategy.
         """
         risk_amount = capital * risk_percentage
         position_value = risk_amount / stop_loss_pct
@@ -148,7 +157,7 @@ class OKXTrader:
     def trade(self, risk_percentage=0.01, atr_sl_mult=1.5, atr_tp_mult=3, trailing_pct=0.01):
         """
         Main trading loop using ATR-based stop loss/take profit.
-        A trailing stop update logic placeholder is provided (to be further developed).
+        A trailing stop update logic placeholder is provided.
         """
         while True:
             try:
@@ -190,7 +199,7 @@ class OKXTrader:
                     take_profit = current_price - (atr * atr_tp_mult)
                     trailing_stop = current_price + (current_price * trailing_pct)
                 else:
-                    # Default values if no open position exist
+                    # Default values if no open position exists
                     stop_loss = current_price - (atr * atr_sl_mult)
                     take_profit = current_price + (atr * atr_tp_mult)
                     trailing_stop = current_price - (current_price * trailing_pct)
@@ -209,9 +218,9 @@ class OKXTrader:
                     self.place_order('sell', position_size, stop_loss, take_profit)
 
                 # --- Trailing Stop Logic Placeholder ---
-                # You can update the trailing stop order here based on new price moves.
+                # You can update the trailing stop order here based on favorable price moves.
                 # For example, if the price moves favorably, adjust the stop_loss to lock in profits.
-                # This part requires more advanced order management with OKX conditional orders.
+                # This part requires additional order management with OKX conditional orders.
 
             except Exception as e:
                 print(f"Error in trading loop: {e}")
@@ -220,5 +229,5 @@ class OKXTrader:
 
 if __name__ == "__main__":
     trader = OKXTrader(API_CREDENTIALS)
-    print("Starting live trading with Cross Margin Mode...")
+    print("Starting live trading with Cross Margin Mode on Sandbox...")
     trader.trade()
